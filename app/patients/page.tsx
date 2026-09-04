@@ -8,12 +8,27 @@ export default function PatientsPage() {
   const [patients, setPatients] = useState<Patient[]>([]);
 
   useEffect(() => {
+    const controller = new AbortController();
     const timeout = setTimeout(async () => {
-      const res = await fetch(`/api/patients?q=${encodeURIComponent(query)}`);
-      const data = await res.json();
-      setPatients(data.patients ?? []);
+      try {
+        const res = await fetch(`/api/patients?q=${encodeURIComponent(query)}`, {
+          signal: controller.signal
+        });
+        const data = await res.json();
+        if (!res.ok || controller.signal.aborted) {
+          return;
+        }
+        setPatients(data.patients ?? []);
+      } catch (error) {
+        if (!(error instanceof DOMException && error.name === "AbortError")) {
+          setPatients([]);
+        }
+      }
     }, 250);
-    return () => clearTimeout(timeout);
+    return () => {
+      controller.abort();
+      clearTimeout(timeout);
+    };
   }, [query]);
 
   return (
@@ -27,7 +42,7 @@ export default function PatientsPage() {
       />
 
       <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
-        {patients.length === 0 && (
+        {query && patients.length === 0 && (
           <p className="px-4 py-6 text-sm text-slate-500">No patients found.</p>
         )}
         {patients.map((p) => (

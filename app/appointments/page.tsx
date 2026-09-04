@@ -10,12 +10,20 @@ type AppointmentWithPatient = Appointment & {
 export default function AppointmentsPage() {
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [appointments, setAppointments] = useState<AppointmentWithPatient[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   async function load() {
     setLoading(true);
     const res = await fetch(`/api/appointments?date=${date}`);
     const data = await res.json();
+    if (!res.ok) {
+      setError(data.error ?? "Failed to load appointments.");
+      setAppointments([]);
+      setLoading(false);
+      return;
+    }
+    setError(null);
     setAppointments(data.appointments ?? []);
     setLoading(false);
   }
@@ -26,11 +34,19 @@ export default function AppointmentsPage() {
   }, [date]);
 
   async function updateStatus(id: string, status: string) {
-    await fetch("/api/appointments", {
+    const res = await fetch("/api/appointments", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id, status })
     });
+    const data = await res.json();
+
+    if (!res.ok) {
+      setError(data.error ?? "Failed to update appointment.");
+      return;
+    }
+
+    setError(null);
     load();
   }
 
@@ -47,6 +63,11 @@ export default function AppointmentsPage() {
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        {error && (
+          <p className="border-b border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </p>
+        )}
         <table className="w-full text-sm">
           <thead className="bg-slate-50 text-slate-500 text-left">
             <tr>

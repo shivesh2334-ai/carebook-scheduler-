@@ -3,27 +3,36 @@ import { getSupabaseServiceClient } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 
+function escapeLikePattern(value: string) {
+  return value.replace(/[\\%_]/g, "\\$&");
+}
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const q = searchParams.get("q")?.trim();
 
   const supabase = getSupabaseServiceClient();
   if (q) {
-    const pattern = `%${q}%`;
-    const [nameResult, phoneResult] = await Promise.all([
+    const pattern = `%${escapeLikePattern(q)}%`;
+    const looksLikePhone = /^[+\d\s()-]+$/.test(q);
+    const phonePattern = `${escapeLikePattern(q.replace(/\s+/g, ""))}%`;
+    const queries = [
       supabase
         .from("patients")
         .select("*")
         .ilike("name", pattern)
         .order("created_at", { ascending: false })
         .limit(50),
-      supabase
-        .from("patients")
-        .select("*")
-        .ilike("phone", pattern)
-        .order("created_at", { ascending: false })
-        .limit(50)
-    ]);
+      looksLikePhone
+        ? supabase
+            .from("patients")
+            .select("*")
+            .like("phone", phonePattern)
+            .order("created_at", { ascending: false })
+            .limit(50)
+        : Promise.resolve({ data: [], error: null })
+    ] as const;
+    const [nameResult, phoneResult] = await Promise.all(queries);
 
     if (nameResult.error || phoneResult.error) {
       return NextResponse.json(

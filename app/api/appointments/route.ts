@@ -12,6 +12,15 @@ export async function GET(req: NextRequest) {
   const date = searchParams.get("date");
   const status = searchParams.get("status");
 
+  if (status && !APPOINTMENT_STATUSES.includes(status as AppointmentStatus)) {
+    return NextResponse.json(
+      {
+        error: `status must be one of: ${APPOINTMENT_STATUSES.join(", ")}`
+      },
+      { status: 400 }
+    );
+  }
+
   const supabase = getSupabaseServiceClient();
   let query = supabase
     .from("appointments")
@@ -50,12 +59,56 @@ export async function PATCH(req: NextRequest) {
   }
 
   const supabase = getSupabaseServiceClient();
+  const { data: existingAppointment, error: existingError } = await supabase
+    .from("appointments")
+    .select("id, status, notes, doctor_name, slot_date, slot_start, slot_end")
+    .eq("id", id)
+    .single();
+
+  if (existingError) {
+    return NextResponse.json({ error: existingError.message }, { status: 500 });
+  }
+
+  if (existingAppointment.status === "cancelled" && status !== "cancelled") {
+    const { data: conflictingAppointments, error: conflictError } = await supabase
+      .from("appointments")
+      .select("id")
+      .eq("doctor_name", existingAppointment.doctor_name)
+      .eq("slot_date", existingAppointment.slot_date)
+      .neq("status", "cancelled")
+      .neq("id", id)
+      .lt("slot_start", existingAppointment.slot_end)
+      .gt("slot_end", existingAppointment.slot_start)
+      .limit(1);
+
+    if (conflictError) {
+      return NextResponse.json({ error: conflictError.message }, { status: 500 });
+    }
+
+    if (conflictingAppointments?.length) {
+      return NextResponse.json(
+        { error: "The appointment slot is no longer available." },
+        { status: 409 }
+      );
+    }
+  }
+
   const { data, error } = await supabase
     .from("appointments")
-    .update({ status: status as AppointmentStatus })
+    .update({
+      status: status as AppointmentStatus,
+      notes: existingAppointment.notes
+    })
     .eq("id", id)
     .select("*")
     .single();
+
+  if (error?.code === "23P01") {
+    return NextResponse.json(
+      { error: "The appointment slot is no longer available." },
+      { status: 409 }
+    );
+  }
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

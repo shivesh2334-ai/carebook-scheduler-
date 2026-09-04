@@ -49,11 +49,25 @@ begin
   if not exists (
     select 1
     from pg_constraint
+    where conname = 'appointments_valid_slot_window'
+  ) then
+    alter table appointments
+      add constraint appointments_valid_slot_window
+      check (slot_end > slot_start);
+  end if;
+end $$;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
     where conname = 'appointments_no_overlapping_slots'
   ) then
     alter table appointments
       add constraint appointments_no_overlapping_slots
       exclude using gist (
+        doctor_name with =,
         slot_date with =,
         tsrange(slot_date + slot_start, slot_date + slot_end, '[)') with &&
       )
@@ -67,9 +81,13 @@ create index if not exists idx_messages_conversation on messages(conversation_id
 
 -- Row Level Security: locked down by default, service role bypasses RLS
 alter table patients enable row level security;
+alter table patients force row level security;
 alter table conversations enable row level security;
+alter table conversations force row level security;
 alter table messages enable row level security;
+alter table messages force row level security;
 alter table appointments enable row level security;
+alter table appointments force row level security;
 
 -- No public policies are created here on purpose — all reads/writes go
 -- through the API routes using the Supabase service role key.

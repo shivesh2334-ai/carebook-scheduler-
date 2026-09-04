@@ -5,6 +5,24 @@ import {
   type ConsultationType
 } from "./types";
 
+const DEFAULT_DOCTOR_NAME = "Dr. Shivesh Kumar";
+
+function getDayOfWeek(date: string): number {
+  return new Date(`${date}T00:00:00Z`).getUTCDay();
+}
+
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, "\\$&");
+}
+
+function isDuringWorkingHours(start: string, end: string): boolean {
+  const opening = timeToMinutes(CLINIC_WORKING_HOURS.start);
+  const closing = timeToMinutes(CLINIC_WORKING_HOURS.end);
+  const slotStart = timeToMinutes(start);
+  const slotEnd = timeToMinutes(end);
+  return slotStart >= opening && slotEnd <= closing;
+}
+
 function addMinutes(time: string, minutes: number): string {
   const [h, m] = time.split(":").map(Number);
   const total = h * 60 + m + minutes;
@@ -35,7 +53,7 @@ async function checkAppointmentSlots(input: {
   const supabase = getSupabaseServiceClient();
   const duration = CONSULTATION_DURATIONS_MIN[input.consultation_type];
 
-  const dayOfWeek = new Date(`${input.date}T00:00:00`).getDay();
+  const dayOfWeek = getDayOfWeek(input.date);
   if (!CLINIC_WORKING_HOURS.daysOpen.includes(dayOfWeek)) {
     return { available_slots: [], note: "Clinic is closed on this date (Sunday)." };
   }
@@ -43,6 +61,7 @@ async function checkAppointmentSlots(input: {
   const { data: booked, error } = await supabase
     .from("appointments")
     .select("slot_start, slot_end")
+    .eq("doctor_name", DEFAULT_DOCTOR_NAME)
     .eq("slot_date", input.date)
     .neq("status", "cancelled");
 
@@ -79,7 +98,9 @@ async function lookupPatient(input: { phone?: string; name?: string }) {
   let query = supabase.from("patients").select("*").limit(5);
 
   if (input.phone) query = query.eq("phone", input.phone);
-  else if (input.name) query = query.ilike("name", `%${input.name}%`);
+  else if (input.name) {
+    query = query.ilike("name", `%${escapeLikePattern(input.name)}%`);
+  }
   else return { patients: [] };
 
   const { data, error } = await query;
@@ -89,11 +110,15 @@ async function lookupPatient(input: { phone?: string; name?: string }) {
 
 async function findOrCreatePatient(name: string, phone: string) {
   const supabase = getSupabaseServiceClient();
-  const { data: existing } = await supabase
+  const { data: existing, error: lookupError } = await supabase
     .from("patients")
     .select("*")
     .eq("phone", phone)
     .maybeSingle();
+
+  if (lookupError) {
+    throw new Error(`Failed to look up patient: ${lookupError.message}`);
+  }
 
   if (existing) return existing;
 
@@ -102,6 +127,20 @@ async function findOrCreatePatient(name: string, phone: string) {
     .insert({ name, phone })
     .select("*")
     .single();
+
+  if (error?.code === "23505") {
+    const { data: concurrentPatient, error: refetchError } = await supabase
+      .from("patients")
+      .select("*")
+      .eq("phone", phone)
+      .single();
+
+    if (refetchError) {
+      throw new Error(`Failed to re-load patient after conflict: ${refetchError.message}`);
+    }
+
+    return concurrentPatient;
+  }
 
   if (error) throw new Error(`Failed to create patient: ${error.message}`);
   return created;
@@ -116,16 +155,31 @@ async function bookAppointment(input: {
   notes?: string;
 }) {
   const supabase = getSupabaseServiceClient();
+  const duration = CONSULTATION_DURATIONS_MIN[input.consultation_type];
+  const endTime = addMinutes(input.start_time, duration);
+  const dayOfWeek = getDayOfWeek(input.date);
+
+  if (!CLINIC_WORKING_HOURS.daysOpen.includes(dayOfWeek)) {
+    throw new Error("The clinic is closed on the requested date.");
+  }
+
+  if (!isDuringWorkingHours(input.start_time, endTime)) {
+    throw new Error("The requested appointment slot is outside clinic hours.");
+  }
+
+  if (isWithinLunch(input.start_time, endTime)) {
+    throw new Error("The requested appointment slot overlaps the lunch break.");
+  }
+
   const patient = await findOrCreatePatient(
     input.patient_name,
     input.patient_phone
   );
-  const duration = CONSULTATION_DURATIONS_MIN[input.consultation_type];
-  const endTime = addMinutes(input.start_time, duration);
 
   const { data: conflictingAppointments, error: conflictError } = await supabase
     .from("appointments")
     .select("id")
+    .eq("doctor_name", DEFAULT_DOCTOR_NAME)
     .eq("slot_date", input.date)
     .neq("status", "cancelled")
     .lt("slot_start", endTime)
@@ -146,6 +200,7 @@ async function bookAppointment(input: {
     .from("appointments")
     .insert({
       patient_id: patient.id,
+      doctor_name: DEFAULT_DOCTOR_NAME,
       consultation_type: input.consultation_type,
       slot_date: input.date,
       slot_start: input.start_time,
@@ -156,6 +211,10 @@ async function bookAppointment(input: {
     .select("*")
     .single();
 
+  if (error?.code === "23P01") {
+    throw new Error("The requested appointment slot is no longer available.");
+  }
+
   if (error) throw new Error(`Booking failed: ${error.message}`);
   return { appointment: data, patient };
 }
@@ -165,9 +224,29 @@ async function cancelAppointment(input: {
   reason?: string;
 }) {
   const supabase = getSupabaseServiceClient();
+  const { data: existingAppointment, error: existingError } = await supabase
+    .from("appointments")
+    .select("*, patients(*)")
+    .eq("id", input.appointment_id)
+    .single();
+
+  if (existingError) {
+    throw new Error(`Failed to load appointment for cancellation: ${existingError.message}`);
+  }
+
+  if (existingAppointment.status === "cancelled") {
+    return { appointment: existingAppointment };
+  }
+
+  const notes = input.reason
+    ? existingAppointment.notes
+      ? `${existingAppointment.notes}\n\nCancellation reason: ${input.reason}`
+      : `Cancellation reason: ${input.reason}`
+    : existingAppointment.notes;
+
   const { data, error } = await supabase
     .from("appointments")
-    .update({ status: "cancelled", notes: input.reason || null })
+    .update({ status: "cancelled", notes })
     .eq("id", input.appointment_id)
     .select("*, patients(*)")
     .single();

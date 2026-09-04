@@ -56,6 +56,11 @@ export default function ChatPage() {
         })
       });
 
+      if (!res.ok && !res.headers.get("content-type")?.includes("text/event-stream")) {
+        const message = await res.text();
+        throw new Error(message || "Request failed");
+      }
+
       if (!res.body) throw new Error("No response stream");
 
       const reader = res.body.getReader();
@@ -71,12 +76,16 @@ export default function ChatPage() {
         buffer = events.pop() || "";
 
         for (const raw of events) {
-          const eventMatch = raw.match(/^event: (.+)$/m);
-          const dataMatch = raw.match(/^data: (.+)$/m);
-          if (!eventMatch || !dataMatch) continue;
+          const lines = raw.split("\n");
+          const eventType = lines
+            .find((line) => line.startsWith("event: "))
+            ?.slice("event: ".length);
+          const dataLines = lines
+            .filter((line) => line.startsWith("data: "))
+            .map((line) => line.slice("data: ".length));
+          if (!eventType || dataLines.length === 0) continue;
 
-          const eventType = eventMatch[1];
-          const data = JSON.parse(dataMatch[1]);
+          const data = JSON.parse(dataLines.join("\n"));
 
           if (eventType === "text") {
             setMessages((prev) =>
@@ -92,8 +101,7 @@ export default function ChatPage() {
                 m.id === assistantId
                   ? {
                       ...m,
-                      content:
-                        m.content ||
+                      content: m.content || data.message || data.error ||
                         "Sorry, something went wrong. Please try again."
                     }
                   : m
@@ -103,11 +111,17 @@ export default function ChatPage() {
         }
         bottomRef.current?.scrollIntoView({ behavior: "smooth" });
       }
-    } catch {
+    } catch (error) {
       setMessages((prev) =>
         prev.map((m) =>
           m.id === assistantId && !m.content
-            ? { ...m, content: "Sorry, something went wrong. Please try again." }
+            ? {
+                ...m,
+                content:
+                  error instanceof Error && error.message
+                    ? error.message
+                    : "Sorry, something went wrong. Please try again."
+              }
             : m
         )
       );
@@ -161,6 +175,7 @@ export default function ChatPage() {
           />
           <button
             type="submit"
+            aria-label="Send message"
             disabled={isStreaming}
             className="flex items-center justify-center rounded-full bg-clinic-600 px-4 py-2 text-white hover:bg-clinic-700 disabled:opacity-50"
           >

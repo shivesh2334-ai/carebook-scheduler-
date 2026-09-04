@@ -16,17 +16,24 @@ interface IncomingMessage {
 
 export async function POST(req: Request) {
   const { messages } = (await req.json()) as { messages: IncomingMessage[] };
+  const encoder = new TextEncoder();
 
   if (!process.env.ANTHROPIC_API_KEY) {
     return new Response(
-      JSON.stringify({ error: "ANTHROPIC_API_KEY is not configured." }),
-      { status: 500 }
+      `event: error\ndata: ${JSON.stringify({
+        message: "ANTHROPIC_API_KEY is not configured."
+      })}\n\nevent: done\ndata: {}\n\n`,
+      {
+        status: 500,
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache"
+        }
+      }
     );
   }
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-  const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
     async start(controller) {
