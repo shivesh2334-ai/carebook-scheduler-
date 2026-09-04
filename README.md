@@ -1,13 +1,13 @@
 # CareBook — Clinical Appointment Scheduler
 
 A Claude-powered appointment scheduling agent for Dwarka Clinic — chat UI,
-staff dashboard, patient management. Built as a single Next.js 14 app on
+staff dashboard, patient management. Built as a single Next.js 16 app on
 Vercel + Supabase (ported from an earlier Replit/Express/Drizzle prototype
 to fit a standard Vercel deployment).
 
 ## Stack
 
-- Next.js 14 (App Router), TypeScript, Tailwind CSS
+- Next.js 16 (App Router), TypeScript, Tailwind CSS
 - Anthropic SDK (`claude-sonnet-4-6`) with an agentic tool-use loop, streamed via SSE
 - Supabase (Postgres) for patients, appointments, conversations
 - Twilio for SMS confirmations (falls back to a console-log stub if unset)
