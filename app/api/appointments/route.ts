@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServiceClient } from "@/lib/supabase";
+import {
+  APPOINTMENT_STATUSES,
+  type AppointmentStatus
+} from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -36,10 +40,19 @@ export async function PATCH(req: NextRequest) {
     );
   }
 
+  if (!APPOINTMENT_STATUSES.includes(status as AppointmentStatus)) {
+    return NextResponse.json(
+      {
+        error: `status must be one of: ${APPOINTMENT_STATUSES.join(", ")}`
+      },
+      { status: 400 }
+    );
+  }
+
   const supabase = getSupabaseServiceClient();
   const { data, error } = await supabase
     .from("appointments")
-    .update({ status })
+    .update({ status: status as AppointmentStatus })
     .eq("id", id)
     .select("*")
     .single();

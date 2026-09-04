@@ -123,6 +123,25 @@ async function bookAppointment(input: {
   const duration = CONSULTATION_DURATIONS_MIN[input.consultation_type];
   const endTime = addMinutes(input.start_time, duration);
 
+  const { data: conflictingAppointments, error: conflictError } = await supabase
+    .from("appointments")
+    .select("id")
+    .eq("slot_date", input.date)
+    .neq("status", "cancelled")
+    .lt("slot_start", endTime)
+    .gt("slot_end", input.start_time)
+    .limit(1);
+
+  if (conflictError) {
+    throw new Error(
+      `Failed to validate appointment availability: ${conflictError.message}`
+    );
+  }
+
+  if (conflictingAppointments?.length) {
+    throw new Error("The requested appointment slot is no longer available.");
+  }
+
   const { data, error } = await supabase
     .from("appointments")
     .insert({

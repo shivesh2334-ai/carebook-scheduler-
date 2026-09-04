@@ -6,6 +6,14 @@ export type AppointmentStatus =
   | "rescheduled"
   | "no_show";
 
+export const APPOINTMENT_STATUSES: AppointmentStatus[] = [
+  "booked",
+  "completed",
+  "cancelled",
+  "rescheduled",
+  "no_show"
+];
+
 export interface Patient {
   id: string;
   name: string;

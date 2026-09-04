@@ -23,7 +23,7 @@ export const clinicalTools: Anthropic.Tool[] = [
   {
     name: "book_appointment",
     description:
-      "Create a new appointment for a patient and trigger an SMS confirmation. Only call after the patient has explicitly confirmed the date, time, and consultation type.",
+      "Create a new appointment for a patient after they explicitly confirm the date, time, and consultation type. Call `send_sms` separately if you need to send a confirmation message.",
     input_schema: {
       type: "object",
       properties: {
@@ -49,7 +49,7 @@ export const clinicalTools: Anthropic.Tool[] = [
   {
     name: "cancel_appointment",
     description:
-      "Cancel an existing appointment by its ID and trigger an SMS confirmation.",
+      "Cancel an existing appointment by its ID. Call `send_sms` separately if you need to send a cancellation message.",
     input_schema: {
       type: "object",
       properties: {

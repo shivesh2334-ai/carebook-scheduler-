@@ -2,6 +2,7 @@
 -- Run in the Supabase SQL editor (or via `supabase db push`)
 
 create extension if not exists "uuid-ossp";
+create extension if not exists btree_gist;
 
 create table if not exists patients (
   id uuid primary key default uuid_generate_v4(),
@@ -42,6 +43,23 @@ create table if not exists appointments (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'appointments_no_overlapping_slots'
+  ) then
+    alter table appointments
+      add constraint appointments_no_overlapping_slots
+      exclude using gist (
+        slot_date with =,
+        tsrange(slot_date + slot_start, slot_date + slot_end, '[)') with &&
+      )
+      where (status <> 'cancelled');
+  end if;
+end $$;
 
 create index if not exists idx_appointments_slot_date on appointments(slot_date);
 create index if not exists idx_appointments_patient on appointments(patient_id);
