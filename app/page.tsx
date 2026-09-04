@@ -56,8 +56,12 @@ export default function ChatPage() {
         })
       });
 
-      if (!res.ok && !res.headers.get("content-type")?.includes("text/event-stream")) {
-        const message = await res.text();
+      if (!res.ok) {
+        const body = await res.text();
+        const match = body.match(/^data: (.+)$/m);
+        const message = match
+          ? JSON.parse(match[1]).message || JSON.parse(match[1]).error
+          : body;
         throw new Error(message || "Request failed");
       }
 

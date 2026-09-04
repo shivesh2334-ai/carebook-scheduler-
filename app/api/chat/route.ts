@@ -27,7 +27,8 @@ export async function POST(req: Request) {
         status: 500,
         headers: {
           "Content-Type": "text/event-stream",
-          "Cache-Control": "no-cache"
+          "Cache-Control": "no-cache",
+          "X-Accel-Buffering": "no"
         }
       }
     );
@@ -123,7 +124,8 @@ export async function POST(req: Request) {
     headers: {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
-      Connection: "keep-alive"
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no"
     }
   });
 }
