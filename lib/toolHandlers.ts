@@ -63,7 +63,7 @@ async function checkAppointmentSlots(input: {
     .select("slot_start, slot_end")
     .eq("doctor_name", DEFAULT_DOCTOR_NAME)
     .eq("slot_date", input.date)
-    .neq("status", "cancelled");
+    .in("status", ["booked", "rescheduled"]);
 
   if (error) throw new Error(`Failed to fetch bookings: ${error.message}`);
 
@@ -181,7 +181,7 @@ async function bookAppointment(input: {
     .select("id")
     .eq("doctor_name", DEFAULT_DOCTOR_NAME)
     .eq("slot_date", input.date)
-    .neq("status", "cancelled")
+    .in("status", ["booked", "rescheduled"])
     .lt("slot_start", endTime)
     .gt("slot_end", input.start_time)
     .limit(1);

@@ -69,13 +69,16 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: existingError.message }, { status: 500 });
   }
 
-  if (existingAppointment.status === "cancelled" && status !== "cancelled") {
+  if (
+    existingAppointment.status === "cancelled" &&
+    (status === "booked" || status === "rescheduled")
+  ) {
     const { data: conflictingAppointments, error: conflictError } = await supabase
       .from("appointments")
       .select("id")
       .eq("doctor_name", existingAppointment.doctor_name)
       .eq("slot_date", existingAppointment.slot_date)
-      .neq("status", "cancelled")
+      .in("status", ["booked", "rescheduled"])
       .neq("id", id)
       .lt("slot_start", existingAppointment.slot_end)
       .gt("slot_end", existingAppointment.slot_start)

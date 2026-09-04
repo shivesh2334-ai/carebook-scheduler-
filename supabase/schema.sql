@@ -71,7 +71,7 @@ begin
         slot_date with =,
         tsrange(slot_date + slot_start, slot_date + slot_end, '[)') with &&
       )
-      where (status <> 'cancelled');
+      where (status in ('booked', 'rescheduled'));
   end if;
 end $$;
 
